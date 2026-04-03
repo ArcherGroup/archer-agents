@@ -14,9 +14,8 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN
-});
+// Geen token nodig — repo is publiek
+const octokit = new Octokit();
 
 const GITHUB_OWNER = 'ArcherGroup';
 const GITHUB_REPO = 'archer-agents';
@@ -159,5 +158,5 @@ server.listen(PORT, () => {
   console.log(`Archer Agent Server v2.0 draait op poort ${PORT}`);
   console.log(`Supabase: ${process.env.SUPABASE_URL ? 'verbonden' : 'NIET geconfigureerd'}`);
   console.log(`Anthropic: ${process.env.ANTHROPIC_API_KEY ? 'verbonden' : 'NIET geconfigureerd'}`);
-  console.log(`GitHub: ${process.env.GITHUB_TOKEN ? 'verbonden' : 'NIET geconfigureerd'}`);
+  console.log(`GitHub: publieke repo — geen token nodig`);
 });
