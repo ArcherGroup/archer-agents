@@ -24,10 +24,11 @@ const CACHE_TTL = 5 * 60 * 1000;
 
 async function fetchFile(path) {
   try {
-    const response = await octokit.repos.getContent({
+    const response = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
       owner: GITHUB_OWNER,
       repo: GITHUB_REPO,
-      path,
+      path: path,
+      headers: { 'X-GitHub-Api-Version': '2022-11-28' }
     });
     return Buffer.from(response.data.content, 'base64').toString('utf-8');
   } catch (err) {
