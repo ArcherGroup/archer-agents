@@ -246,15 +246,6 @@ const server = http.createServer(async (req, res) => {
         await supabase.from('messages').insert({ session_id: currentSessionId, role: 'user', content: message });
 
         const response = await anthropic.messages.create({
-          betas: ['mcp-client-2025-04-04'],
-          mcp_servers: [
-            {
-              type: 'url',
-              url: 'https://mcp.hubspot.com/anthropic',
-              name: 'hubspot',
-              authorization_token: process.env.HUBSPOT_TOKEN
-            }
-          ],
           model: 'claude-sonnet-4-5',
           max_tokens: 2048,
           system: systemPrompt,
