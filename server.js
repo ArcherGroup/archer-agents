@@ -44,7 +44,7 @@ async function loadAgentConfig(agentId) {
 async function getHubSpotContext() {
   try {
     const now = new Date();
-    const [dealsRes, contactsRes] = await Promise.all([
+    const [dealsRes, contactsRes, renewalRes] = await Promise.all([
       hubspotClient.crm.deals.searchApi.doSearch({
         filterGroups:[{filters:[{propertyName:'dealstage',operator:'NOT_IN',values:['63137245','2803756224','4839600317','63247585']}]}],
         properties:['dealname','amount','dealstage','hs_lastmodifieddate'],limit:50,
@@ -54,41 +54,50 @@ async function getHubSpotContext() {
         filterGroups:[{filters:[{propertyName:'createdate',operator:'GTE',value:String(new Date(now.getFullYear(),now.getMonth(),1).getTime())}]}],
         properties:['firstname','lastname','lifecyclestage'],limit:20,
         sorts:[{propertyName:'createdate',direction:'DESCENDING'}]
+      }),
+      hubspotClient.crm.deals.searchApi.doSearch({
+        filterGroups:[{filters:[{propertyName:'dealstage',operator:'EQ',value:'67650809'}]}],
+        properties:['dealname','amount','closedate'],limit:50,
+        sorts:[{propertyName:'closedate',direction:'ASCENDING'}]
       })
     ]);
     const deals = dealsRes.results || [];
     const contacts = contactsRes.results || [];
+    const renewalDeals = renewalRes.results || [];
     const totalValue = deals.reduce((sum,d) => sum + parseFloat(d.properties.amount||0), 0);
     const stageCount = {};
-    deals.forEach(d => { const s = stageName(d.properties.dealstage||''); stageCount[s] = (stageCount[s]||0)+1; });
+    deals.forEach(d => { const st = stageName(d.properties.dealstage||''); stageCount[st]=(stageCount[st]||0)+1; });
     const now7 = Date.now() - 7*24*60*60*1000;
     const inactive = deals.filter(d => new Date(d.properties.hs_lastmodifieddate).getTime() < now7);
-    
-    // Up For Renewal deals met details
-    try {
-      const renewalRes = await hubspotClient.crm.deals.searchApi.doSearch({
-        filterGroups:[{filters:[{propertyName:'dealstage',operator:'EQ',value:'67650809'}]}],
-        properties:['dealname','amount','closedate','hubspot_owner_id','hs_lastmodifieddate'],
-        limit:50, sorts:[{propertyName:'closedate',direction:'ASCENDING'}]
-      });
-      const renewalDeals = renewalRes.results || [];
-      const oneYearAgo = Date.now() - 365*24*60*60*1000;
-      const recentRenewals = renewalDeals.filter(d => {
-        const cd = new Date(d.properties.closedate).getTime();
-        return cd >= oneYearAgo;
-      });
-      if (renewalDeals.length > 0) {
-        context += '\n## Up For Renewal details (' + renewalDeals.length + ' deals)\n';
-        renewalDeals.forEach(d => {
-          const closedate = d.properties.closedate ? new Date(d.properties.closedate).toLocaleDateString('nl-BE') : 'geen datum';
-          const amount = Math.round(d.properties.amount || 0).toLocaleString('nl-BE');
-          context += '- ' + (d.properties.dealname||'Onbenoemd') + ' — €' + amount + ' — sluitdatum: ' + closedate + '\n';
-        });
-        context += '\nWithin 365 days: ' + recentRenewals.length + ' van ' + renewalDeals.length + '\n';
-      }
-    } catch(e) { console.error('Renewal details error:', e.message); }
+    const oneYearAgo = Date.now() - 365*24*60*60*1000;
+    const recentRenewals = renewalDeals.filter(d => d.properties.closedate && new Date(d.properties.closedate).getTime() >= oneYearAgo);
 
-    return `\n# LIVE HUBSPOT DATA — ${now.toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'})}\n\n## Pipeline\n- Open deals: ${deals.length}\n- Totale waarde: €${Math.round(totalValue).toLocaleString('nl-BE')}\n- Nieuwe contacten: ${contacts.length}\n\n## Per stage\n${Object.entries(stageCount).map(([s,n])=>`- ${s}: ${n}`).join('\n')}\n\n## Alerts inactief 7+ dagen\n${inactive.length===0?'- Geen alerts':inactive.map(d=>`- ${d.properties.dealname||'Onbenoemd'} — ${stageName(d.properties.dealstage)} — €${Math.round(d.properties.amount||0).toLocaleString('nl-BE')}`).join('\n')}\n\n## Nieuwe contacten\n${contacts.slice(0,5).map(c=>`- ${c.properties.firstname||''} ${c.properties.lastname||''} — ${c.properties.lifecyclestage||'onbekend'}`).join('\n')}`;
+    return `
+# LIVE HUBSPOT DATA — ${now.toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'})}
+
+## Pipeline overzicht
+- Open deals: ${deals.length}
+- Totale waarde: €${Math.round(totalValue).toLocaleString('nl-BE')}
+- Nieuwe contacten: ${contacts.length}
+
+## Per stage
+${Object.entries(stageCount).map(([st,n])=>`- ${st}: ${n}`).join('\n')}
+
+## Alerts inactief 7+ dagen
+${inactive.length===0?'- Geen alerts':inactive.map(d=>`- ${d.properties.dealname||'Onbenoemd'} — ${stageName(d.properties.dealstage)} — €${Math.round(d.properties.amount||0).toLocaleString('nl-BE')}`).join('\n')}
+
+## Nieuwe contacten
+${contacts.slice(0,5).map(c=>`- ${c.properties.firstname||''} ${c.properties.lastname||''} — ${c.properties.lifecyclestage||'onbekend'}`).join('\n')}
+
+## Up For Renewal — volledige lijst (${renewalDeals.length} deals)
+${renewalDeals.map(d=>{
+  const cd = d.properties.closedate ? new Date(d.properties.closedate).toLocaleDateString('nl-BE') : 'geen datum';
+  const amt = Math.round(d.properties.amount||0).toLocaleString('nl-BE');
+  return `- ${d.properties.dealname||'Onbenoemd'} — €${amt} — sluitdatum: ${cd}`;
+}).join('\n')}
+
+Binnen 365 dagen: ${recentRenewals.length} van ${renewalDeals.length}
+`;
   } catch(err) { return '# HUBSPOT\nFout: ' + err.message; }
 }
 
