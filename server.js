@@ -63,6 +63,31 @@ async function getHubSpotContext() {
     deals.forEach(d => { const s = stageName(d.properties.dealstage||''); stageCount[s] = (stageCount[s]||0)+1; });
     const now7 = Date.now() - 7*24*60*60*1000;
     const inactive = deals.filter(d => new Date(d.properties.hs_lastmodifieddate).getTime() < now7);
+    
+    // Up For Renewal deals met details
+    try {
+      const renewalRes = await hubspotClient.crm.deals.searchApi.doSearch({
+        filterGroups:[{filters:[{propertyName:'dealstage',operator:'EQ',value:'67650809'}]}],
+        properties:['dealname','amount','closedate','hubspot_owner_id','hs_lastmodifieddate'],
+        limit:50, sorts:[{propertyName:'closedate',direction:'ASCENDING'}]
+      });
+      const renewalDeals = renewalRes.results || [];
+      const oneYearAgo = Date.now() - 365*24*60*60*1000;
+      const recentRenewals = renewalDeals.filter(d => {
+        const cd = new Date(d.properties.closedate).getTime();
+        return cd >= oneYearAgo;
+      });
+      if (renewalDeals.length > 0) {
+        context += '\n## Up For Renewal details (' + renewalDeals.length + ' deals)\n';
+        renewalDeals.forEach(d => {
+          const closedate = d.properties.closedate ? new Date(d.properties.closedate).toLocaleDateString('nl-BE') : 'geen datum';
+          const amount = Math.round(d.properties.amount || 0).toLocaleString('nl-BE');
+          context += '- ' + (d.properties.dealname||'Onbenoemd') + ' — €' + amount + ' — sluitdatum: ' + closedate + '\n';
+        });
+        context += '\nWithin 365 days: ' + recentRenewals.length + ' van ' + renewalDeals.length + '\n';
+      }
+    } catch(e) { console.error('Renewal details error:', e.message); }
+
     return `\n# LIVE HUBSPOT DATA — ${now.toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'})}\n\n## Pipeline\n- Open deals: ${deals.length}\n- Totale waarde: €${Math.round(totalValue).toLocaleString('nl-BE')}\n- Nieuwe contacten: ${contacts.length}\n\n## Per stage\n${Object.entries(stageCount).map(([s,n])=>`- ${s}: ${n}`).join('\n')}\n\n## Alerts inactief 7+ dagen\n${inactive.length===0?'- Geen alerts':inactive.map(d=>`- ${d.properties.dealname||'Onbenoemd'} — ${stageName(d.properties.dealstage)} — €${Math.round(d.properties.amount||0).toLocaleString('nl-BE')}`).join('\n')}\n\n## Nieuwe contacten\n${contacts.slice(0,5).map(c=>`- ${c.properties.firstname||''} ${c.properties.lastname||''} — ${c.properties.lifecyclestage||'onbekend'}`).join('\n')}`;
   } catch(err) { return '# HUBSPOT\nFout: ' + err.message; }
 }
