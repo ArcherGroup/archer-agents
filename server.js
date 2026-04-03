@@ -52,7 +52,7 @@ async function getHubSpotContext(agentId) {
 
     const [dealsRes, contactsRes] = await Promise.all([
       hubspotClient.crm.deals.searchApi.doSearch({
-        filterGroups: [{ filters: [{ propertyName: 'closedate', operator: 'GTE', value: String(firstOfMonth) }] }],
+        filterGroups: [{ filters: [{ propertyName: 'dealstage', operator: 'NOT_IN', values: ['63137245','2803756224','4839600317','63247585'] }] }],
         properties: ['dealname', 'amount', 'dealstage', 'hubspot_owner_id', 'closedate', 'hs_lastmodifieddate'],
         limit: 50, sorts: [{ propertyName: 'hs_lastmodifieddate', direction: 'DESCENDING' }]
       }),
@@ -69,7 +69,7 @@ async function getHubSpotContext(agentId) {
     const totalValue = deals.reduce((sum, d) => sum + parseFloat(d.properties.amount || 0), 0);
     const stageCount = {};
     deals.forEach(d => {
-      const stage = d.properties.dealstage || 'onbekend';
+      const stage = stageName(d.properties.dealstage || 'onbekend');
       stageCount[stage] = (stageCount[stage] || 0) + 1;
     });
 
@@ -91,7 +91,7 @@ async function getHubSpotContext(agentId) {
 ${Object.entries(stageCount).map(([stage, count]) => `- ${stage}: ${count} deals`).join('\n')}
 
 ## Alerts — inactief 7+ dagen
-${inactiveDeals.length === 0 ? '- Geen alerts' : inactiveDeals.map(d => `- ${d.properties.dealname || 'Onbenoemde deal'} — stage: ${d.properties.dealstage} — waarde: €${Math.round(d.properties.amount || 0).toLocaleString('nl-BE')}`).join('\n')}
+${inactiveDeals.length === 0 ? '- Geen alerts' : inactiveDeals.map(d => `- ${d.properties.dealname || 'Onbenoemde deal'} — stage: ${stageName(d.properties.dealstage)} — waarde: €${Math.round(d.properties.amount || 0).toLocaleString('nl-BE')}`).join('\n')}
 
 ## Recente nieuwe contacten
 ${contacts.slice(0, 5).map(c => `- ${c.properties.firstname || ''} ${c.properties.lastname || ''} — ${c.properties.lifecyclestage || 'onbekend'}`).join('\n')}
@@ -101,6 +101,52 @@ ${contacts.slice(0, 5).map(c => `- ${c.properties.firstname || ''} ${c.propertie
     return '# HUBSPOT DATA\nKon geen live data ophalen — controleer de HubSpot token.';
   }
 }
+
+
+const STAGE_MAP = {
+  '74045115': 'New Opportunity',
+  '4957683955': 'Discovery / 7d Trial',
+  '582710757': 'Meeting Scheduled',
+  '4977533139': 'Aanwezig op workshop',
+  '66985972': 'In Consideration',
+  '63137245': 'Lost - No Deal',
+  '1991865554': 'Won - Confirmation',
+  '63137748': 'Won - Send Invoice',
+  '157726961': 'Won - Invoice Sent',
+  '1134715080': 'Won - Invoice Paid',
+  '63137244': 'Won - Deal Active',
+  '1239721201': 'Won - Deal Expired',
+  '67650809': 'Up For Renewal',
+  '1513597170': 'Attempting Renewal',
+  '63247585': 'Lost - No Renewal',
+  '63247583': 'Won - Send Invoice (Renewal)',
+  '157620964': 'Won - Invoice Sent (Renewal)',
+  '1134715084': 'Won - Invoice Paid (Renewal)',
+  '63247584': 'Won - Deal Active (Renewal)',
+  '1240241362': 'Won - Deal Expired (Renewal)',
+  '2803756220': 'New Opportunity (MC)',
+  '5073827008': 'VP intake ontvangen',
+  '2803756222': 'Workshop / Event',
+  '2803756221': 'Meeting Scheduled (MC)',
+  '2804284646': 'In Consideration (MC)',
+  '2803756224': 'Lost - No Deal (MC)',
+  '2803756223': 'Won - Confirmation (MC)',
+  '2803756225': 'Won - Send Invoice (MC)',
+  '2804286682': 'Won - Invoice Sent (MC)',
+  '2803756226': 'Won - Invoice Paid (MC)',
+  '2804284647': 'Won - Deal Closed (MC)',
+  '4839599353': 'New Opportunity (MM)',
+  '4839600314': 'Meeting Scheduled (MM)',
+  '4839600316': 'In Consideration (MM)',
+  '4839600317': 'Lost - No Deal (MM)',
+  '4839600318': 'Won - Confirmation (MM)',
+  '5015150790': 'Won - Send Invoice (MM)',
+  '5015150791': 'Won - Invoice Sent (MM)',
+  '5015150793': 'Won - Invoice Paid (MM)',
+  '5015150795': 'Won - Deal Active (MM)',
+  '5015150796': 'Won - Deal Expired (MM)',
+};
+function stageName(id) { return STAGE_MAP[id] || id; }
 
 const HUBSPOT_AGENTS = ['coo', 'sales-manager', 'hubspot', 'sales-trainer', 'ceo'];
 
