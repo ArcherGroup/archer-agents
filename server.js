@@ -71,17 +71,17 @@ async function getIntranetContext(agentId) {
   try {
     const now = new Date();
     const [mentorsRes, clientsRes] = await Promise.all([
-      intranet.from('mentors').select('name, current_points, max_points, monthly_target').limit(20),
-      intranet.from('clients').select('name, trajectory, status').limit(200)
+      intranet.from('mentors').select('id, name, email, level, role, monthly_target, is_active').eq('is_active', true).limit(20),
+      intranet.from('clients').select('id, name, mentor_id, program_type, status, start_date, coaching_frequency').eq('status', 'active').limit(200)
     ]);
     const mentors = mentorsRes.data || [];
     const clients = clientsRes.data || [];
     const trajectCount = {};
-    clients.forEach(c => { const t = c.trajectory||'onbekend'; trajectCount[t]=(trajectCount[t]||0)+1; });
+    clients.forEach(c => { const t = c.program_type||'onbekend traject'; trajectCount[t]=(trajectCount[t]||0)+1; });
 
     let context = `\n# LIVE INTRANET DATA — ${now.toLocaleDateString('nl-BE',{day:'numeric',month:'long',year:'numeric'})}\n\n`;
     context += `## Mentoren (${mentors.length})\n`;
-    mentors.forEach(m => { context += `- ${m.name} — ${m.current_points||0}/${m.max_points||36} punten — target: €${(m.monthly_target||0).toLocaleString('nl-BE')}\n`; });
+    mentors.forEach(m => { context += `- ${m.name} (${m.level||'onbekend'}) — target: €${(m.monthly_target||0).toLocaleString('nl-BE')}/maand\n`; });
     context += `\n## Klanten per traject (${clients.length} totaal)\n`;
     Object.entries(trajectCount).forEach(([t,n]) => { context += `- ${t}: ${n}\n`; });
 
