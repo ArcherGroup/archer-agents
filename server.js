@@ -1,10 +1,10 @@
 const http = require('http');
 const { createClient } = require('@supabase/supabase-js');
 const Anthropic = require('@anthropic-ai/sdk');
+const { Octokit } = require('@octokit/rest');
 
 const PORT = process.env.PORT || 3000;
 
-// Clients initialiseren
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
@@ -14,23 +14,75 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Request handler
+const octokit = new Octokit({
+  auth: process.env.GITHUB_TOKEN
+});
+
+const GITHUB_OWNER = 'ArcherGroup';
+const GITHUB_REPO = 'archer-agents';
+const configCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000;
+
+async function fetchFile(path) {
+  try {
+    const response = await octokit.repos.getContent({
+      owner: GITHUB_OWNER,
+      repo: GITHUB_REPO,
+      path,
+    });
+    return Buffer.from(response.data.content, 'base64').toString('utf-8');
+  } catch (err) {
+    console.log(`Bestand niet gevonden: ${path}`);
+    return null;
+  }
+}
+
+async function loadAgentConfig(agentId) {
+  const cached = configCache.get(agentId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.config;
+  }
+
+  console.log(`Config laden voor agent: ${agentId}`);
+  const sharedFiles = ['ARCHER', 'PRODUCTS', 'TONE_OF_VOICE', 'TEAM', 'KPIS', 'PROCESSES', 'TOOLS'];
+  const agentFiles = ['CLAUDE', 'SKILL', 'TASK'];
+
+  const sharedContent = await Promise.all(
+    sharedFiles.map(f => fetchFile(`shared/${f}.md`))
+  );
+
+  const agentContent = await Promise.all(
+    agentFiles.map(f => fetchFile(`agents/${agentId}/${f}.md`))
+  );
+
+  const loaded = sharedContent.filter(Boolean).length + agentContent.filter(Boolean).length;
+  console.log(`${loaded} bestanden geladen voor ${agentId}`);
+
+  const systemPrompt = [
+    '# ARCHER KENNISBANK',
+    ...sharedContent.filter(Boolean),
+    `# ${agentId.toUpperCase()} AGENT CONFIGURATIE`,
+    ...agentContent.filter(Boolean)
+  ].join('\n\n---\n\n');
+
+  configCache.set(agentId, { config: systemPrompt, timestamp: Date.now() });
+  return systemPrompt;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // Health check
   if (req.method === 'GET' && url.pathname === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       status: 'online',
       service: 'Archer Agent Server',
-      version: '1.0.0',
-      agents: ['coo', 'ceo', 'sales-manager', 'sales-trainer', 
+      version: '2.0.0',
+      agents: ['coo', 'ceo', 'sales-manager', 'sales-trainer',
                'hubspot', 'copywriting', 'content-social', 'dev-assistent']
     }));
   }
 
-  // Chat endpoint
   if (req.method === 'POST' && url.pathname === '/chat') {
     let body = '';
     req.on('data', chunk => body += chunk);
@@ -43,7 +95,8 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'agentId, message en userId zijn verplicht' }));
         }
 
-        // Sessie ophalen of aanmaken
+        const systemPrompt = await loadAgentConfig(agentId);
+
         let currentSessionId = sessionId;
         if (!currentSessionId) {
           const { data: newSession } = await supabase
@@ -54,7 +107,6 @@ const server = http.createServer(async (req, res) => {
           currentSessionId = newSession.id;
         }
 
-        // Geschiedenis ophalen
         const { data: history } = await supabase
           .from('messages')
           .select('role, content')
@@ -62,18 +114,16 @@ const server = http.createServer(async (req, res) => {
           .order('created_at', { ascending: true })
           .limit(50);
 
-        // Bericht opslaan
         await supabase.from('messages').insert({
           session_id: currentSessionId,
           role: 'user',
           content: message
         });
 
-        // Claude aanroepen
         const response = await anthropic.messages.create({
           model: 'claude-sonnet-4-5',
           max_tokens: 2048,
-          system: `Je bent de ${agentId} agent van Archer. Je helpt het Archer team professioneel en direct.`,
+          system: systemPrompt,
           messages: [
             ...(history || []).map(m => ({ role: m.role, content: m.content })),
             { role: 'user', content: message }
@@ -82,7 +132,6 @@ const server = http.createServer(async (req, res) => {
 
         const reply = response.content[0].text;
 
-        // Antwoord opslaan
         await supabase.from('messages').insert({
           session_id: currentSessionId,
           role: 'assistant',
@@ -91,10 +140,7 @@ const server = http.createServer(async (req, res) => {
         });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ 
-          reply, 
-          sessionId: currentSessionId 
-        }));
+        res.end(JSON.stringify({ reply, sessionId: currentSessionId }));
 
       } catch (err) {
         console.error('Chat error:', err);
@@ -105,13 +151,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 404
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Niet gevonden' }));
 });
 
 server.listen(PORT, () => {
-  console.log(`Archer Agent Server draait op poort ${PORT}`);
+  console.log(`Archer Agent Server v2.0 draait op poort ${PORT}`);
   console.log(`Supabase: ${process.env.SUPABASE_URL ? 'verbonden' : 'NIET geconfigureerd'}`);
   console.log(`Anthropic: ${process.env.ANTHROPIC_API_KEY ? 'verbonden' : 'NIET geconfigureerd'}`);
+  console.log(`GitHub: ${process.env.GITHUB_TOKEN ? 'verbonden' : 'NIET geconfigureerd'}`);
 });
