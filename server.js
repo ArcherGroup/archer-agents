@@ -129,23 +129,7 @@ const server = http.createServer(async (req, res) => {
             { role: 'user', content: message }
           ]
         };
-
-        // Voeg HubSpot MCP toe voor relevante agents
-        if (HUBSPOT_AGENTS.includes(agentId) && process.env.HUBSPOT_TOKEN) {
-          apiParams.mcp_servers = [{
-            type: 'url',
-            url: 'https://mcp.hubspot.com/anthropic',
-            name: 'hubspot',
-            authorization_token: process.env.HUBSPOT_TOKEN
-          }];
-        }
-
-        // Gebruik beta header voor MCP
-        const requestOptions = HUBSPOT_AGENTS.includes(agentId)
-          ? { headers: { 'anthropic-beta': 'mcp-client-2025-04-04' } }
-          : {};
-
-        const response = await anthropic.messages.create(apiParams, requestOptions);
+const response = await anthropic.messages.create(apiParams);
 
         // Verwerk antwoord — ook als er tool calls tussen zitten
         const textBlocks = response.content.filter(b => b.type === 'text');
