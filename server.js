@@ -67,7 +67,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const { userId, agentId } = JSON.parse(body);
         const { data: session } = await supabase
-          .from('sessions').select('id')
+          .from('agent_sessions').select('id')
           .eq('user_id', userId).eq('agent_id', agentId)
           .order('last_message_at', { ascending: false })
           .limit(1).single();
@@ -76,7 +76,7 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ messages: [], sessionId: null }));
         }
         const { data: messages } = await supabase
-          .from('messages').select('role, content')
+          .from('agent_messages').select('role, content')
           .eq('session_id', session.id)
           .order('created_at', { ascending: true }).limit(50);
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -105,17 +105,17 @@ const server = http.createServer(async (req, res) => {
         let currentSessionId = sessionId;
         if (!currentSessionId) {
           const { data: newSession } = await supabase
-            .from('sessions').insert({ user_id: userId, agent_id: agentId })
+            .from('agent_sessions').insert({ user_id: userId, agent_id: agentId })
             .select('id').single();
           currentSessionId = newSession.id;
         }
 
         const { data: history } = await supabase
-          .from('messages').select('role, content')
+          .from('agent_messages').select('role, content')
           .eq('session_id', currentSessionId)
           .order('created_at', { ascending: true }).limit(50);
 
-        await supabase.from('messages').insert({
+        await supabase.from('agent_messages').insert({
           session_id: currentSessionId, role: 'user', content: message
         });
 
@@ -135,7 +135,7 @@ const response = await anthropic.messages.create(apiParams);
         const textBlocks = response.content.filter(b => b.type === 'text');
         const reply = textBlocks.map(b => b.text).join('\n') || 'Geen antwoord ontvangen.';
 
-        await supabase.from('messages').insert({
+        await supabase.from('agent_messages').insert({
           session_id: currentSessionId,
           role: 'assistant',
           content: reply,
